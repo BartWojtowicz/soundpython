@@ -8,7 +8,8 @@ soundpython is a Python library for audio file processing that provides a simple
 - Convert between mono and stereo audio
 - Manipulate individual audio channels
 - Extract portions of audio by time
-- Concatenate audio files
+- Concatenate audio files with optional crossfade
+- Create smooth audio transitions with crossfading overlay
 - Automatic audio normalization
 - Comprehensive metadata handling
 
@@ -21,6 +22,7 @@ soundpython is a Python library for audio file processing that provides a simple
 ## Installation
 
 Install the package using pip:
+
 
 ```bash
 pip install soundpython
@@ -47,8 +49,12 @@ intro = audio.slice(end_seconds=30.0)  # First 30 seconds
 chorus = audio.slice(60.0, 90.0)       # 30-second clip from 1:00 to 1:30
 outro = audio.slice(180.0)             # Everything after 3:00
 
-# Concatenate audio segments
+# Simple concatenation of audio segments
 combined = intro.concat(chorus)
+
+# Crossfade between two audio segments
+# The end of intro will fade out while the start of outro fades in
+crossfaded = intro.overlay(outro, fade_duration=2.0)  # 2-second crossfade
 
 # Save in different formats
 audio.save("output.wav")
