@@ -7,6 +7,7 @@ soundpython is a Python library for audio file processing that provides a simple
 - Load and save audio in multiple formats (MP3, WAV, OGG, FLAC)
 - Convert between mono and stereo audio
 - Manipulate individual audio channels
+- Extract portions of audio by time
 - Concatenate audio files
 - Automatic audio normalization
 - Comprehensive metadata handling
@@ -41,8 +42,13 @@ mono_audio = audio.to_mono()
 # Extract left channel from stereo audio
 left_channel = audio.get_channel(0)
 
-# Concatenate two audio files
-combined = audio1.concat(audio2)
+# Extract portions of audio by time
+intro = audio.slice(end_seconds=30.0)  # First 30 seconds
+chorus = audio.slice(60.0, 90.0)       # 30-second clip from 1:00 to 1:30
+outro = audio.slice(180.0)             # Everything after 3:00
+
+# Concatenate audio segments
+combined = intro.concat(chorus)
 
 # Save in different formats
 audio.save("output.wav")

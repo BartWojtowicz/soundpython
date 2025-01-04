@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from audiopy import Audio, AudioMetadata
+from soundpython import Audio, AudioMetadata
 
 # Test constants
 MONO_SAMPLE_RATE = 22050
@@ -307,3 +307,62 @@ def test_concat_invalid():
     # Test mismatched sample rates
     with pytest.raises(ValueError, match="Sample rates must match"):
         mono.concat(different_rate)
+
+def test_slice():
+    """Test slicing audio by time"""
+    # Load test file
+    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    
+    # Test slicing the middle portion
+    start_time = 0.5
+    end_time = 1.0
+    sliced = audio.slice(start_time, end_time)
+    
+    # Check metadata
+    assert sliced.metadata.sample_rate == audio.metadata.sample_rate
+    assert sliced.metadata.channels == audio.metadata.channels
+    assert sliced.metadata.sample_width == audio.metadata.sample_width
+    assert abs(sliced.metadata.duration_seconds - (end_time - start_time)) < 0.1
+    
+    # Check expected length in samples
+    expected_samples = int((end_time - start_time) * audio.metadata.sample_rate)
+    assert abs(len(sliced) - expected_samples) <= 1  # Allow for rounding
+    
+    # Test slicing from start
+    start_slice = audio.slice(end_seconds=1.0)
+    assert abs(start_slice.metadata.duration_seconds - 1.0) < 0.1
+    
+    # Test slicing to end
+    end_slice = audio.slice(start_seconds=1.0)
+    assert abs(end_slice.metadata.duration_seconds - (audio.metadata.duration_seconds - 1.0)) < 0.1
+    
+    # Test invalid inputs
+    with pytest.raises(ValueError):
+        audio.slice(-1.0)  # Negative start time
+    
+    with pytest.raises(ValueError):
+        audio.slice(2.0, 1.0)  # End before start
+        
+    with pytest.raises(ValueError):
+        audio.slice(0.0, audio.metadata.duration_seconds + 1)  # End after audio duration
+
+
+def test_slice_stereo():
+    """Test slicing stereo audio"""
+    audio = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    
+    # Slice a portion
+    sliced = audio.slice(0.5, 1.5)
+    
+    # Check that stereo structure is preserved
+    assert sliced.metadata.channels == 2
+    assert sliced.data.ndim == 2
+    assert sliced.data.shape[1] == 2
+    
+    # Check duration
+    assert abs(sliced.metadata.duration_seconds - 1.0) < 0.1
+    
+    # Check that the data is a proper subset
+    start_idx = int(0.5 * audio.metadata.sample_rate)
+    end_idx = int(1.5 * audio.metadata.sample_rate)
+    np.testing.assert_array_equal(sliced.data, audio.data[start_idx:end_idx])

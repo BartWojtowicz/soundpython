@@ -278,6 +278,53 @@ class Audio:
 
         return Audio(concatenated_data, new_metadata)  # Add format-specific options
 
+    def slice(self, start_seconds: float = 0.0, end_seconds: float | None = None) -> "Audio":
+        """
+        Extract a portion of the audio between start_seconds and end_seconds.
+        
+        Args:
+            start_seconds: Start time in seconds (default: 0.0)
+            end_seconds: End time in seconds (default: None, meaning end of audio)
+            
+        Returns:
+            Audio: New Audio instance with the extracted portion
+            
+        Raises:
+            ValueError: If start_seconds or end_seconds are invalid
+        """
+        # Validate inputs
+        if start_seconds < 0:
+            raise ValueError("start_seconds must be non-negative")
+        
+        if end_seconds is not None:
+            if end_seconds < start_seconds:
+                raise ValueError("end_seconds must be greater than start_seconds")
+            if end_seconds > self.metadata.duration_seconds:
+                raise ValueError("end_seconds cannot exceed audio duration")
+        else:
+            end_seconds = self.metadata.duration_seconds
+            
+        # Convert seconds to sample indices
+        start_idx = int(start_seconds * self.metadata.sample_rate)
+        end_idx = int(end_seconds * self.metadata.sample_rate)
+        
+        # Extract the portion of audio data
+        sliced_data = self.data[start_idx:end_idx]
+        
+        # Calculate new duration
+        new_duration = (end_idx - start_idx) / self.metadata.sample_rate
+        
+        # Create new metadata
+        new_metadata = AudioMetadata(
+            sample_rate=self.metadata.sample_rate,
+            channels=self.metadata.channels,
+            sample_width=self.metadata.sample_width,
+            duration_seconds=new_duration,
+            frame_count=len(sliced_data) if self.metadata.channels == 1 else len(sliced_data)
+        )
+        
+        return Audio(sliced_data, new_metadata)
+
     def save(self, file_path: str | Path, format: str = None) -> None:
         """
         Save audio to a file using ffmpeg
