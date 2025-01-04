@@ -1,6 +1,6 @@
-# AudioPy
+# soundpython
 
-AudioPy is a Python library for audio file processing that provides a simple, intuitive interface for working with audio data. It supports various audio formats and offers functionality for both mono and stereo audio manipulation.
+soundpython is a Python library for audio file processing that provides a simple, intuitive interface for working with audio data. It supports various audio formats and offers functionality for both mono and stereo audio manipulation.
 
 ## Features
 
@@ -22,7 +22,7 @@ AudioPy is a Python library for audio file processing that provides a simple, in
 Install the package using pip:
 
 ```bash
-pip install audiopy
+pip install soundpython
 ```
 
 ## Usage
@@ -30,7 +30,7 @@ pip install audiopy
 Here are some common usage examples:
 
 ```python
-from audiopy import Audio
+from soundpython import Audio
 
 # Load an audio file
 audio = Audio.from_file("song.mp3")
