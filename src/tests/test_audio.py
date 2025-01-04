@@ -7,7 +7,7 @@ import pytest
 from soundpython import Audio, AudioMetadata
 
 # Test constants
-MONO_SAMPLE_RATE = 22050
+MONO_SAMPLE_RATE = 44100
 STEREO_SAMPLE_RATE = 44100
 
 TEST_ROOT_DIR: Path = Path(__file__).parent
@@ -17,10 +17,10 @@ TEST_DATA_DIR: Path = TEST_ROOT_DIR / "test_data"
 def test_mono_mp3_metadata():
     """Test loading a mono MP3 file and verify its metadata"""
     # Load the test file
-    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
 
     # Check metadata values
-    assert audio.metadata.sample_rate == 22050, "Sample rate should be 22.05kHz"
+    assert audio.metadata.sample_rate == MONO_SAMPLE_RATE, "Sample rate should be 22.05kHz"
     assert audio.metadata.channels == 1, "Audio should be mono"
     assert audio.metadata.bits_per_sample == 16, "Bit depth should be 16 bits"
 
@@ -45,7 +45,7 @@ def test_file_not_found():
 
 def test_get_channel_mono():
     """Test that get_channel on mono audio returns the same audio"""
-    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     channel = audio.get_channel(0)
 
     # Should be the same data
@@ -55,7 +55,7 @@ def test_get_channel_mono():
 
 def test_to_mono_on_mono():
     """Test that to_mono on mono audio returns the same audio"""
-    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     mono = audio.to_mono()
 
     # Should be the same data
@@ -65,17 +65,17 @@ def test_to_mono_on_mono():
 
 def test_audio_representation():
     """Test the string representation of the Audio object"""
-    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     repr_str = repr(audio)
 
-    assert "22050Hz" in repr_str, "Sample rate should be in string representation"
+    assert "44100Hz" in repr_str, "Sample rate should be in string representation"
     assert "channels=1" in repr_str, "Channel count should be in string representation"
     assert isinstance(repr_str, str), "Representation should be a string"
 
 
 def test_length():
     """Test the __len__ method returns correct frame count"""
-    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     assert len(audio) == audio.metadata.frame_count
 
 
@@ -184,10 +184,10 @@ def assert_audios_equal(audio1, audio2, check_data=True, is_lossy=False):
             # Strict comparison for lossless formats
             np.testing.assert_allclose(audio1.data, audio2.data, rtol=1e-4, atol=1e-4)
 
-
+# Fix 1: Update test_save_and_load_mono
 def test_save_and_load_mono():
     """Test saving and loading mono audio preserves the data"""
-    original = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    original = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
 
     with (
         tempfile.NamedTemporaryFile(suffix=".wav") as temp_wav,
@@ -198,10 +198,10 @@ def test_save_and_load_mono():
         loaded_wav = Audio.from_file(temp_wav.name)
         assert_audios_equal(original, loaded_wav)
 
-        # Test MP3 format
+        # Test MP3 format - note is_lossy=True here
         original.save(temp_mp3.name)
         loaded_mp3 = Audio.from_file(temp_mp3.name)
-        assert_audios_equal(original, loaded_mp3)
+        assert_audios_equal(original, loaded_mp3, is_lossy=True)
 
 
 def test_save_and_load_stereo():
@@ -225,7 +225,7 @@ def test_save_and_load_stereo():
 
 def test_save_invalid_format():
     """Test that saving with invalid format raises error"""
-    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
 
     with tempfile.NamedTemporaryFile(suffix=".xyz") as temp_file:
         with pytest.raises(ValueError):
@@ -235,8 +235,8 @@ def test_save_invalid_format():
 def test_concat_mono():
     """Test concatenating two mono audio files"""
     # Load same file twice for testing
-    audio1 = Audio.from_file(TEST_DATA_DIR / "test.mp3")
-    audio2 = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio1 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    audio2 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
 
     # Concatenate
     result = audio1.concat(audio2)
@@ -282,7 +282,7 @@ def test_concat_stereo():
 
 def test_concat_invalid():
     """Test concatenating incompatible audio files"""
-    mono = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
 
     # Test mismatched channels
@@ -296,7 +296,7 @@ def test_concat_invalid():
     different_rate = Audio(
         mono.data,
         AudioMetadata(
-            sample_rate=44100,  # Different from mono file
+            sample_rate=22050,  # Different from mono file
             channels=mono.metadata.channels,
             sample_width=mono.metadata.sample_width,
             duration_seconds=mono.metadata.duration_seconds,
@@ -311,7 +311,7 @@ def test_concat_invalid():
 def test_slice():
     """Test slicing audio by time"""
     # Load test file
-    audio = Audio.from_file(TEST_DATA_DIR / "test.mp3")
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     
     # Test slicing the middle portion
     start_time = 0.5
@@ -366,3 +366,99 @@ def test_slice_stereo():
     start_idx = int(0.5 * audio.metadata.sample_rate)
     end_idx = int(1.5 * audio.metadata.sample_rate)
     np.testing.assert_array_equal(sliced.data, audio.data[start_idx:end_idx])
+
+def test_overlay_mono():
+    """Test overlaying two mono audio files with crossfade"""
+    # Load same file twice for testing
+    audio1 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    audio2 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    
+    # Test with 0.5 second fade
+    fade_duration = 0.5
+    result = audio1.overlay(audio2, fade_duration)
+    
+    # Check metadata
+    assert result.metadata.sample_rate == audio1.metadata.sample_rate
+    assert result.metadata.channels == 1
+    assert result.metadata.sample_width == audio1.metadata.sample_width
+    
+    # Check data shape
+    fade_samples = int(fade_duration * audio1.metadata.sample_rate)
+    expected_length = len(audio1.data) + len(audio2.data) - fade_samples
+    assert len(result.data) == expected_length
+    
+    # Check normalization
+    assert np.all(result.data >= -1.0)
+    assert np.all(result.data <= 1.0)
+    
+    # Test fade region
+    fade_start_idx = len(audio1.data) - fade_samples
+    fade_region = result.data[fade_start_idx:fade_start_idx + fade_samples]
+    
+    # Verify fade is actually happening
+    assert np.all(np.diff(fade_region) != 0), "Fade region should not be constant"
+
+def test_overlay_stereo():
+    """Test overlaying two stereo audio files with crossfade"""
+    # Load same file twice for testing
+    audio1 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    audio2 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    
+    # Test with 0.5 second fade
+    fade_duration = 0.5
+    result = audio1.overlay(audio2, fade_duration)
+    
+    # Check metadata
+    assert result.metadata.sample_rate == audio1.metadata.sample_rate
+    assert result.metadata.channels == 2
+    assert result.metadata.sample_width == audio1.metadata.sample_width
+    
+    # Check data shape
+    fade_samples = int(fade_duration * audio1.metadata.sample_rate)
+    expected_length = len(audio1.data) + len(audio2.data) - fade_samples
+    assert len(result.data) == expected_length
+    assert result.data.shape[1] == 2
+    
+    # Check normalization
+    assert np.all(result.data >= -1.0)
+    assert np.all(result.data <= 1.0)
+    
+    # Test fade region
+    fade_start_idx = len(audio1.data) - fade_samples
+    fade_region = result.data[fade_start_idx:fade_start_idx + fade_samples]
+    
+    # Verify fade is happening in both channels
+    assert np.all(np.diff(fade_region[:, 0]) != 0), "Left channel fade should not be constant"
+    assert np.all(np.diff(fade_region[:, 1]) != 0), "Right channel fade should not be constant"
+
+def test_overlay_invalid():
+    """Test overlaying incompatible audio files"""
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    
+    # Test mismatched channels
+    with pytest.raises(ValueError, match="Channel counts must match"):
+        mono.overlay(stereo, 0.5)
+    
+    # Test invalid fade duration
+    with pytest.raises(ValueError, match="Fade duration must be positive"):
+        mono.overlay(mono, 0)
+    
+    with pytest.raises(ValueError, match="Fade duration cannot exceed"):
+        mono.overlay(mono, 500.0)  # Longer than audio duration
+    
+    # Create audio with different sample rate
+    different_rate = Audio(
+        mono.data,
+        AudioMetadata(
+            sample_rate=22050,
+            channels=mono.metadata.channels,
+            sample_width=mono.metadata.sample_width,
+            duration_seconds=mono.metadata.duration_seconds,
+            frame_count=len(mono.data),
+        ),
+    )
+    
+    # Test mismatched sample rates
+    with pytest.raises(ValueError, match="Sample rates must match"):
+        mono.overlay(different_rate, 0.5)

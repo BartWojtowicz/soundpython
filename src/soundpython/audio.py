@@ -256,7 +256,7 @@ class Audio:
         # Validate matching metadata
         if self.metadata.channels != other.metadata.channels:
             raise ValueError("Channel counts must match")
-        if self.metadata.sample_rate != other.metadata.sample_rate:
+        if abs(self.metadata.sample_rate - other.metadata.sample_rate) > 0:  # Exact match required
             raise ValueError("Sample rates must match")
         if self.metadata.sample_width != other.metadata.sample_width:
             raise ValueError("Sample widths must match")
@@ -276,7 +276,8 @@ class Audio:
             frame_count=len(concatenated_data),
         )
 
-        return Audio(concatenated_data, new_metadata)  # Add format-specific options
+        return Audio(concatenated_data, new_metadata)
+
 
     def slice(self, start_seconds: float = 0.0, end_seconds: float | None = None) -> "Audio":
         """
@@ -324,6 +325,73 @@ class Audio:
         )
         
         return Audio(sliced_data, new_metadata)
+
+    def overlay(self, other: "Audio", fade_duration: float) -> "Audio":
+        """
+        Overlay another audio segment onto this one with crossfading.
+        The end of the first audio will fade out while the start of the second audio fades in.
+        
+        Args:
+            other: Another Audio object to overlay
+            fade_duration: Duration of the crossfade in seconds
+            
+        Returns:
+            Audio: New Audio object with overlaid audio and crossfade
+            
+        Raises:
+            ValueError: If audio metadata doesn't match or fade duration is invalid
+        """
+        # Validate matching metadata
+        if self.metadata.channels != other.metadata.channels:
+            raise ValueError("Channel counts must match")
+        if abs(self.metadata.sample_rate - other.metadata.sample_rate) > 0:  # Exact match required
+            raise ValueError("Sample rates must match")
+        if self.metadata.sample_width != other.metadata.sample_width:
+            raise ValueError("Sample widths must match")
+            
+        # Validate fade duration more strictly
+        if fade_duration <= 0:
+            raise ValueError("Fade duration must be positive")
+        if fade_duration >= min(self.metadata.duration_seconds, other.metadata.duration_seconds):
+            raise ValueError("Fade duration cannot exceed the duration of either audio segment")
+            
+        # Rest of the implementation remains the same...
+        fade_length = int(fade_duration * self.metadata.sample_rate)
+        total_length = len(self.data) + len(other.data) - fade_length
+        
+        if self.metadata.channels == 1:
+            output = np.zeros(total_length, dtype=np.float32)
+        else:
+            output = np.zeros((total_length, 2), dtype=np.float32)
+        
+        fade_start_idx = len(self.data) - fade_length
+        output[:fade_start_idx] = self.data[:fade_start_idx]
+        output[fade_start_idx + fade_length:] = other.data[fade_length:]
+        
+        fade_out = np.linspace(1, 0, fade_length)
+        fade_in = np.linspace(0, 1, fade_length)
+        
+        if self.metadata.channels == 1:
+            output[fade_start_idx:fade_start_idx + fade_length] = (
+                self.data[fade_start_idx:] * fade_out +
+                other.data[:fade_length] * fade_in
+            )
+        else:
+            for channel in range(2):
+                output[fade_start_idx:fade_start_idx + fade_length, channel] = (
+                    self.data[fade_start_idx:, channel] * fade_out +
+                    other.data[:fade_length, channel] * fade_in
+                )
+        
+        new_metadata = AudioMetadata(
+            sample_rate=self.metadata.sample_rate,
+            channels=self.metadata.channels,
+            sample_width=self.metadata.sample_width,
+            duration_seconds=(total_length / self.metadata.sample_rate),
+            frame_count=total_length
+        )
+        
+        return Audio(output, new_metadata)
 
     def save(self, file_path: str | Path, format: str = None) -> None:
         """
