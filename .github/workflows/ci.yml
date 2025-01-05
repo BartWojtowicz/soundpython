@@ -44,5 +44,8 @@ jobs:
       - name: Set up Python
         run: uv python install 312
 
-      - name: Ruff check
+      - name: Ruff lint check
         run: uvx ruff check
+
+      - name: Ruff format check
+        run: uvx ruff format --check
