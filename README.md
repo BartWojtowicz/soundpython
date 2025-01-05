@@ -56,6 +56,10 @@ combined = intro.concat(chorus)
 # The end of intro will fade out while the start of outro fades in
 crossfaded = intro.overlay(outro, fade_duration=2.0)  # 2-second crossfade
 
+# Create silent tracks
+stereo_silence = Audio.create_silent(duration_seconds=5.0)  # 5 seconds of stereo silence
+mono_silence = Audio.create_silent(duration_seconds=3.0, stereo=False)  # 3 seconds of mono silence
+
 # Save in different formats
 audio.save("output.wav")
 audio.save("output.mp3")

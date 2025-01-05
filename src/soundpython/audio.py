@@ -86,6 +86,53 @@ class Audio:
         except subprocess.CalledProcessError as e:
             raise AudioLoadError(f"Error getting audio info: {e}")
 
+    # Add this method to the Audio class
+
+    @classmethod
+    def create_silent(
+        cls, duration_seconds: float, stereo: bool = True, sample_rate: int = 44100, sample_width: int = 2
+    ) -> "Audio":
+        """
+        Create a silent audio track.
+
+        Args:
+            duration_seconds: Length of the silent track in seconds
+            stereo: If True, create stereo track; if False, create mono track (default: True)
+            sample_rate: Sample rate in Hz (default: 44100)
+            sample_width: Sample width in bytes (default: 2, which is 16-bit)
+
+        Returns:
+            Audio: New Audio instance with silent track
+
+        Raises:
+            ValueError: If duration is negative or other parameters are invalid
+        """
+        if duration_seconds <= 0:
+            raise ValueError("Duration must be positive")
+        if sample_rate <= 0:
+            raise ValueError("Sample rate must be positive")
+        if sample_width not in {1, 2, 4}:
+            raise ValueError("Sample width must be 1, 2, or 4 bytes")
+
+        # Calculate number of frames
+        frame_count = int(duration_seconds * sample_rate)
+
+        # Create silent data array
+        channels = 2 if stereo else 1
+        shape = (frame_count, channels) if stereo else (frame_count,)
+        data = np.zeros(shape, dtype=np.float32)
+
+        # Create metadata
+        metadata = AudioMetadata(
+            sample_rate=sample_rate,
+            channels=channels,
+            sample_width=sample_width,
+            duration_seconds=duration_seconds,
+            frame_count=frame_count,
+        )
+
+        return cls(data, metadata)
+
     @classmethod
     def from_file(cls, file_path: str | Path) -> "Audio":
         """
@@ -278,25 +325,24 @@ class Audio:
 
         return Audio(concatenated_data, new_metadata)
 
-
     def slice(self, start_seconds: float = 0.0, end_seconds: float | None = None) -> "Audio":
         """
         Extract a portion of the audio between start_seconds and end_seconds.
-        
+
         Args:
             start_seconds: Start time in seconds (default: 0.0)
             end_seconds: End time in seconds (default: None, meaning end of audio)
-            
+
         Returns:
             Audio: New Audio instance with the extracted portion
-            
+
         Raises:
             ValueError: If start_seconds or end_seconds are invalid
         """
         # Validate inputs
         if start_seconds < 0:
             raise ValueError("start_seconds must be non-negative")
-        
+
         if end_seconds is not None:
             if end_seconds < start_seconds:
                 raise ValueError("end_seconds must be greater than start_seconds")
@@ -304,40 +350,40 @@ class Audio:
                 raise ValueError("end_seconds cannot exceed audio duration")
         else:
             end_seconds = self.metadata.duration_seconds
-            
+
         # Convert seconds to sample indices
         start_idx = int(start_seconds * self.metadata.sample_rate)
         end_idx = int(end_seconds * self.metadata.sample_rate)
-        
+
         # Extract the portion of audio data
         sliced_data = self.data[start_idx:end_idx]
-        
+
         # Calculate new duration
         new_duration = (end_idx - start_idx) / self.metadata.sample_rate
-        
+
         # Create new metadata
         new_metadata = AudioMetadata(
             sample_rate=self.metadata.sample_rate,
             channels=self.metadata.channels,
             sample_width=self.metadata.sample_width,
             duration_seconds=new_duration,
-            frame_count=len(sliced_data) if self.metadata.channels == 1 else len(sliced_data)
+            frame_count=len(sliced_data) if self.metadata.channels == 1 else len(sliced_data),
         )
-        
+
         return Audio(sliced_data, new_metadata)
 
     def overlay(self, other: "Audio", fade_duration: float) -> "Audio":
         """
         Overlay another audio segment onto this one with crossfading.
         The end of the first audio will fade out while the start of the second audio fades in.
-        
+
         Args:
             other: Another Audio object to overlay
             fade_duration: Duration of the crossfade in seconds
-            
+
         Returns:
             Audio: New Audio object with overlaid audio and crossfade
-            
+
         Raises:
             ValueError: If audio metadata doesn't match or fade duration is invalid
         """
@@ -348,49 +394,47 @@ class Audio:
             raise ValueError("Sample rates must match")
         if self.metadata.sample_width != other.metadata.sample_width:
             raise ValueError("Sample widths must match")
-            
+
         # Validate fade duration more strictly
         if fade_duration <= 0:
             raise ValueError("Fade duration must be positive")
         if fade_duration >= min(self.metadata.duration_seconds, other.metadata.duration_seconds):
             raise ValueError("Fade duration cannot exceed the duration of either audio segment")
-            
+
         # Rest of the implementation remains the same...
         fade_length = int(fade_duration * self.metadata.sample_rate)
         total_length = len(self.data) + len(other.data) - fade_length
-        
+
         if self.metadata.channels == 1:
             output = np.zeros(total_length, dtype=np.float32)
         else:
             output = np.zeros((total_length, 2), dtype=np.float32)
-        
+
         fade_start_idx = len(self.data) - fade_length
         output[:fade_start_idx] = self.data[:fade_start_idx]
-        output[fade_start_idx + fade_length:] = other.data[fade_length:]
-        
+        output[fade_start_idx + fade_length :] = other.data[fade_length:]
+
         fade_out = np.linspace(1, 0, fade_length)
         fade_in = np.linspace(0, 1, fade_length)
-        
+
         if self.metadata.channels == 1:
-            output[fade_start_idx:fade_start_idx + fade_length] = (
-                self.data[fade_start_idx:] * fade_out +
-                other.data[:fade_length] * fade_in
+            output[fade_start_idx : fade_start_idx + fade_length] = (
+                self.data[fade_start_idx:] * fade_out + other.data[:fade_length] * fade_in
             )
         else:
             for channel in range(2):
-                output[fade_start_idx:fade_start_idx + fade_length, channel] = (
-                    self.data[fade_start_idx:, channel] * fade_out +
-                    other.data[:fade_length, channel] * fade_in
+                output[fade_start_idx : fade_start_idx + fade_length, channel] = (
+                    self.data[fade_start_idx:, channel] * fade_out + other.data[:fade_length, channel] * fade_in
                 )
-        
+
         new_metadata = AudioMetadata(
             sample_rate=self.metadata.sample_rate,
             channels=self.metadata.channels,
             sample_width=self.metadata.sample_width,
             duration_seconds=(total_length / self.metadata.sample_rate),
-            frame_count=total_length
+            frame_count=total_length,
         )
-        
+
         return Audio(output, new_metadata)
 
     def save(self, file_path: str | Path, format: str = None) -> None:

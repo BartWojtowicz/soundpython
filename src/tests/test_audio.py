@@ -145,6 +145,7 @@ def test_stereo_to_mono_conversion():
     assert np.all(mono.data >= -1.0)
     assert np.all(mono.data <= 1.0)
 
+
 def assert_audios_equal(audio1, audio2, check_data=True, is_lossy=False):
     """Helper function to compare two Audio objects
 
@@ -183,6 +184,7 @@ def assert_audios_equal(audio1, audio2, check_data=True, is_lossy=False):
         else:
             # Strict comparison for lossless formats
             np.testing.assert_allclose(audio1.data, audio2.data, rtol=1e-4, atol=1e-4)
+
 
 # Fix 1: Update test_save_and_load_mono
 def test_save_and_load_mono():
@@ -308,41 +310,42 @@ def test_concat_invalid():
     with pytest.raises(ValueError, match="Sample rates must match"):
         mono.concat(different_rate)
 
+
 def test_slice():
     """Test slicing audio by time"""
     # Load test file
     audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-    
+
     # Test slicing the middle portion
     start_time = 0.5
     end_time = 1.0
     sliced = audio.slice(start_time, end_time)
-    
+
     # Check metadata
     assert sliced.metadata.sample_rate == audio.metadata.sample_rate
     assert sliced.metadata.channels == audio.metadata.channels
     assert sliced.metadata.sample_width == audio.metadata.sample_width
     assert abs(sliced.metadata.duration_seconds - (end_time - start_time)) < 0.1
-    
+
     # Check expected length in samples
     expected_samples = int((end_time - start_time) * audio.metadata.sample_rate)
     assert abs(len(sliced) - expected_samples) <= 1  # Allow for rounding
-    
+
     # Test slicing from start
     start_slice = audio.slice(end_seconds=1.0)
     assert abs(start_slice.metadata.duration_seconds - 1.0) < 0.1
-    
+
     # Test slicing to end
     end_slice = audio.slice(start_seconds=1.0)
     assert abs(end_slice.metadata.duration_seconds - (audio.metadata.duration_seconds - 1.0)) < 0.1
-    
+
     # Test invalid inputs
     with pytest.raises(ValueError):
         audio.slice(-1.0)  # Negative start time
-    
+
     with pytest.raises(ValueError):
         audio.slice(2.0, 1.0)  # End before start
-        
+
     with pytest.raises(ValueError):
         audio.slice(0.0, audio.metadata.duration_seconds + 1)  # End after audio duration
 
@@ -350,103 +353,106 @@ def test_slice():
 def test_slice_stereo():
     """Test slicing stereo audio"""
     audio = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-    
+
     # Slice a portion
     sliced = audio.slice(0.5, 1.5)
-    
+
     # Check that stereo structure is preserved
     assert sliced.metadata.channels == 2
     assert sliced.data.ndim == 2
     assert sliced.data.shape[1] == 2
-    
+
     # Check duration
     assert abs(sliced.metadata.duration_seconds - 1.0) < 0.1
-    
+
     # Check that the data is a proper subset
     start_idx = int(0.5 * audio.metadata.sample_rate)
     end_idx = int(1.5 * audio.metadata.sample_rate)
     np.testing.assert_array_equal(sliced.data, audio.data[start_idx:end_idx])
+
 
 def test_overlay_mono():
     """Test overlaying two mono audio files with crossfade"""
     # Load same file twice for testing
     audio1 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     audio2 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-    
+
     # Test with 0.5 second fade
     fade_duration = 0.5
     result = audio1.overlay(audio2, fade_duration)
-    
+
     # Check metadata
     assert result.metadata.sample_rate == audio1.metadata.sample_rate
     assert result.metadata.channels == 1
     assert result.metadata.sample_width == audio1.metadata.sample_width
-    
+
     # Check data shape
     fade_samples = int(fade_duration * audio1.metadata.sample_rate)
     expected_length = len(audio1.data) + len(audio2.data) - fade_samples
     assert len(result.data) == expected_length
-    
+
     # Check normalization
     assert np.all(result.data >= -1.0)
     assert np.all(result.data <= 1.0)
-    
+
     # Test fade region
     fade_start_idx = len(audio1.data) - fade_samples
-    fade_region = result.data[fade_start_idx:fade_start_idx + fade_samples]
-    
+    fade_region = result.data[fade_start_idx : fade_start_idx + fade_samples]
+
     # Verify fade is actually happening
     assert np.all(np.diff(fade_region) != 0), "Fade region should not be constant"
+
 
 def test_overlay_stereo():
     """Test overlaying two stereo audio files with crossfade"""
     # Load same file twice for testing
     audio1 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
     audio2 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-    
+
     # Test with 0.5 second fade
     fade_duration = 0.5
     result = audio1.overlay(audio2, fade_duration)
-    
+
     # Check metadata
     assert result.metadata.sample_rate == audio1.metadata.sample_rate
     assert result.metadata.channels == 2
     assert result.metadata.sample_width == audio1.metadata.sample_width
-    
+
     # Check data shape
     fade_samples = int(fade_duration * audio1.metadata.sample_rate)
     expected_length = len(audio1.data) + len(audio2.data) - fade_samples
     assert len(result.data) == expected_length
     assert result.data.shape[1] == 2
-    
+
     # Check normalization
     assert np.all(result.data >= -1.0)
     assert np.all(result.data <= 1.0)
-    
+
     # Test fade region
     fade_start_idx = len(audio1.data) - fade_samples
-    fade_region = result.data[fade_start_idx:fade_start_idx + fade_samples]
-    
+    fade_region = result.data[fade_start_idx : fade_start_idx + fade_samples]
+
     # Verify fade is happening in both channels
     assert np.all(np.diff(fade_region[:, 0]) != 0), "Left channel fade should not be constant"
     assert np.all(np.diff(fade_region[:, 1]) != 0), "Right channel fade should not be constant"
+
 
 def test_overlay_invalid():
     """Test overlaying incompatible audio files"""
     mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
     stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-    
+
     # Test mismatched channels
     with pytest.raises(ValueError, match="Channel counts must match"):
         mono.overlay(stereo, 0.5)
-    
+
     # Test invalid fade duration
     with pytest.raises(ValueError, match="Fade duration must be positive"):
         mono.overlay(mono, 0)
-    
+
     with pytest.raises(ValueError, match="Fade duration cannot exceed"):
         mono.overlay(mono, 500.0)  # Longer than audio duration
-    
+
     # Create audio with different sample rate
     different_rate = Audio(
         mono.data,
@@ -458,7 +464,78 @@ def test_overlay_invalid():
             frame_count=len(mono.data),
         ),
     )
-    
+
     # Test mismatched sample rates
     with pytest.raises(ValueError, match="Sample rates must match"):
         mono.overlay(different_rate, 0.5)
+
+
+def test_create_silent_stereo():
+    """Test creating a stereo silent track"""
+    duration = 2.0
+    audio = Audio.create_silent(duration)
+
+    # Check metadata
+    assert audio.metadata.channels == 2
+    assert audio.metadata.sample_rate == 44100
+    assert audio.metadata.sample_width == 2
+    assert abs(audio.metadata.duration_seconds - duration) < 0.0001
+    assert audio.metadata.frame_count == int(duration * 44100)
+
+    # Check data shape and content
+    assert audio.data.shape == (int(duration * 44100), 2)
+    assert np.all(audio.data == 0)
+    assert audio.data.dtype == np.float32
+
+
+def test_create_silent_mono():
+    """Test creating a mono silent track"""
+    duration = 1.5
+    audio = Audio.create_silent(duration, stereo=False)
+
+    # Check metadata
+    assert audio.metadata.channels == 1
+    assert audio.metadata.sample_rate == 44100
+    assert audio.metadata.sample_width == 2
+    assert abs(audio.metadata.duration_seconds - duration) < 0.0001
+    assert audio.metadata.frame_count == int(duration * 44100)
+
+    # Check data shape and content
+    assert audio.data.shape == (int(duration * 44100),)
+    assert np.all(audio.data == 0)
+    assert audio.data.dtype == np.float32
+
+
+def test_create_silent_custom_params():
+    """Test creating silent track with custom parameters"""
+    duration = 1.0
+    sample_rate = 22050
+    sample_width = 4
+
+    audio = Audio.create_silent(duration, stereo=True, sample_rate=sample_rate, sample_width=sample_width)
+
+    # Check metadata
+    assert audio.metadata.channels == 2
+    assert audio.metadata.sample_rate == sample_rate
+    assert audio.metadata.sample_width == sample_width
+    assert abs(audio.metadata.duration_seconds - duration) < 0.0001
+    assert audio.metadata.frame_count == int(duration * sample_rate)
+
+
+def test_create_silent_invalid_params():
+    """Test error handling for invalid parameters"""
+    # Test negative duration
+    with pytest.raises(ValueError, match="Duration must be positive"):
+        Audio.create_silent(-1.0)
+
+    # Test zero duration
+    with pytest.raises(ValueError, match="Duration must be positive"):
+        Audio.create_silent(0.0)
+
+    # Test invalid sample rate
+    with pytest.raises(ValueError, match="Sample rate must be positive"):
+        Audio.create_silent(1.0, sample_rate=0)
+
+    # Test invalid sample width
+    with pytest.raises(ValueError, match="Sample width must be 1, 2, or 4 bytes"):
+        Audio.create_silent(1.0, sample_width=3)
