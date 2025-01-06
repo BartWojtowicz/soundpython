@@ -371,105 +371,6 @@ def test_slice_stereo():
     np.testing.assert_array_equal(sliced.data, audio.data[start_idx:end_idx])
 
 
-def test_overlay_mono():
-    """Test overlaying two mono audio files with crossfade"""
-    # Load same file twice for testing
-    audio1 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-    audio2 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-
-    # Test with 0.5 second fade
-    fade_duration = 0.5
-    result = audio1.overlay(audio2, fade_duration)
-
-    # Check metadata
-    assert result.metadata.sample_rate == audio1.metadata.sample_rate
-    assert result.metadata.channels == 1
-    assert result.metadata.sample_width == audio1.metadata.sample_width
-
-    # Check data shape
-    fade_samples = int(fade_duration * audio1.metadata.sample_rate)
-    expected_length = len(audio1.data) + len(audio2.data) - fade_samples
-    assert len(result.data) == expected_length
-
-    # Check normalization
-    assert np.all(result.data >= -1.0)
-    assert np.all(result.data <= 1.0)
-
-    # Test fade region
-    fade_start_idx = len(audio1.data) - fade_samples
-    fade_region = result.data[fade_start_idx : fade_start_idx + fade_samples]
-
-    # Verify fade is actually happening
-    assert np.all(np.diff(fade_region) != 0), "Fade region should not be constant"
-
-
-def test_overlay_stereo():
-    """Test overlaying two stereo audio files with crossfade"""
-    # Load same file twice for testing
-    audio1 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-    audio2 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-
-    # Test with 0.5 second fade
-    fade_duration = 0.5
-    result = audio1.overlay(audio2, fade_duration)
-
-    # Check metadata
-    assert result.metadata.sample_rate == audio1.metadata.sample_rate
-    assert result.metadata.channels == 2
-    assert result.metadata.sample_width == audio1.metadata.sample_width
-
-    # Check data shape
-    fade_samples = int(fade_duration * audio1.metadata.sample_rate)
-    expected_length = len(audio1.data) + len(audio2.data) - fade_samples
-    assert len(result.data) == expected_length
-    assert result.data.shape[1] == 2
-
-    # Check normalization
-    assert np.all(result.data >= -1.0)
-    assert np.all(result.data <= 1.0)
-
-    # Test fade region
-    fade_start_idx = len(audio1.data) - fade_samples
-    fade_region = result.data[fade_start_idx : fade_start_idx + fade_samples]
-
-    # Verify fade is happening in both channels
-    assert np.all(np.diff(fade_region[:, 0]) != 0), "Left channel fade should not be constant"
-    assert np.all(np.diff(fade_region[:, 1]) != 0), "Right channel fade should not be constant"
-
-
-def test_overlay_invalid():
-    """Test overlaying incompatible audio files"""
-    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-
-    # Test mismatched channels
-    with pytest.raises(ValueError, match="Channel counts must match"):
-        mono.overlay(stereo, 0.5)
-
-    # Test invalid fade duration
-    with pytest.raises(ValueError, match="Fade duration must be positive"):
-        mono.overlay(mono, 0)
-
-    with pytest.raises(ValueError, match="Fade duration cannot exceed"):
-        mono.overlay(mono, 500.0)  # Longer than audio duration
-
-    # Create audio with different sample rate
-    different_rate = Audio(
-        mono.data,
-        AudioMetadata(
-            sample_rate=22050,
-            channels=mono.metadata.channels,
-            sample_width=mono.metadata.sample_width,
-            duration_seconds=mono.metadata.duration_seconds,
-            frame_count=len(mono.data),
-        ),
-    )
-
-    # Test mismatched sample rates
-    with pytest.raises(ValueError, match="Sample rates must match"):
-        mono.overlay(different_rate, 0.5)
-
-
 def test_create_silent_stereo():
     """Test creating a stereo silent track"""
     duration = 2.0
@@ -656,3 +557,123 @@ def test_concat_zero_crossfade():
 
     # Results should be identical
     np.testing.assert_array_equal(result_no_crossfade.data, result_zero_crossfade.data)
+
+
+def test_overlay_stereo_with_stereo():
+    """Test overlaying two stereo tracks"""
+    # Load test files
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    overlay = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test basic overlay at beginning
+    result = base.overlay(overlay, position=0.0)
+    assert result.metadata.channels == 2
+    # Use np.isclose() for floating point comparison with small tolerance
+    assert np.isclose(result.metadata.duration_seconds, base.metadata.duration_seconds, rtol=1e-6)
+    assert len(result.data) == len(base.data)
+
+    # Test overlay with positive position
+    position = 1.0  # 1 second
+    result = base.overlay(overlay, position=position)
+    assert result.metadata.duration_seconds >= base.metadata.duration_seconds
+    assert result.metadata.duration_seconds >= position + overlay.metadata.duration_seconds
+
+
+def test_overlay_mono_incompatible():
+    """Test overlaying mono and stereo tracks raises error"""
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    overlay = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+
+    with pytest.raises(ValueError, match="Channel counts must match"):
+        base.overlay(overlay, position=0.0)
+
+
+def test_overlay_amplitude_scaling():
+    """Test that overlaid audio is properly scaled to prevent clipping"""
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    overlay = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    result = base.overlay(overlay, position=0.0)
+    assert np.max(np.abs(result.data)) <= 1.0
+
+
+def test_overlay_position_validation():
+    """Test position parameter validation"""
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    overlay = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test negative position
+    with pytest.raises(ValueError, match="Position cannot be negative"):
+        base.overlay(overlay, position=-1.0)
+
+
+def test_overlay_end_alignment():
+    """Test overlaying track near the end of base track"""
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    overlay = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Position overlay near end of base track
+    position = base.metadata.duration_seconds - 0.5  # 0.5 seconds before end
+    result = base.overlay(overlay, position=position)
+
+    # Result should be longer than base to accommodate overlay
+    assert result.metadata.duration_seconds > base.metadata.duration_seconds
+
+
+def test_overlay_mono_with_mono():
+    """Test overlaying two mono tracks"""
+    base = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    overlay = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+
+    result = base.overlay(overlay, position=0.0)
+    assert result.metadata.channels == 1
+    assert np.max(np.abs(result.data)) <= 1.0
+
+
+def test_overlay_sample_rate_mismatch():
+    """Test overlaying tracks with different sample rates"""
+    # Create a mock audio with different sample rate
+    mock_overlay = Audio(
+        data=np.zeros((1000, 2)),
+        metadata=AudioMetadata(
+            sample_rate=22050,  # Different from standard 44100
+            channels=2,
+            sample_width=2,
+            duration_seconds=1.0,
+            frame_count=1000,
+        ),
+    )
+
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    with pytest.raises(ValueError, match="Sample rates must match"):
+        base.overlay(mock_overlay, position=0.0)
+
+
+def test_overlay_different_durations():
+    """Test overlaying tracks of different durations"""
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Create shorter overlay
+    short_duration = 1.0  # 1 second
+    short_overlay = base.slice(0, short_duration)
+
+    # Overlay at different positions
+    start_pos = base.metadata.duration_seconds / 2
+    result = base.overlay(short_overlay, position=start_pos)
+
+    # Check result length
+    expected_duration = max(base.metadata.duration_seconds, start_pos + short_duration)
+    assert abs(result.metadata.duration_seconds - expected_duration) < 0.01
+
+
+def test_overlay_identical_position():
+    """Test overlaying the same track at the same position"""
+    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    result = base.overlay(base, position=0.0)
+
+    # Result should be scaled to prevent clipping
+    assert np.max(np.abs(result.data)) <= 1.0
+    # Due to scaling, amplitudes should be less than direct sum
+    assert np.all(np.abs(result.data) <= np.abs(base.data * 2))

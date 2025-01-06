@@ -419,20 +419,20 @@ class Audio:
 
         return Audio(sliced_data, new_metadata)
 
-    def overlay(self, other: "Audio", fade_duration: float) -> "Audio":
+    def overlay(self, other: "Audio", position: float = 0.0) -> "Audio":
         """
-        Overlay another audio segment onto this one with crossfading.
-        The end of the first audio will fade out while the start of the second audio fades in.
+        Overlay another audio segment on top of this one, mixing both signals.
+        Both tracks will play simultaneously, with the overlay track starting at the specified position.
 
         Args:
             other: Another Audio object to overlay
-            fade_duration: Duration of the crossfade in seconds
+            position: Start position in seconds for the overlay (default: 0.0)
 
         Returns:
-            Audio: New Audio object with overlaid audio and crossfade
+            Audio: New Audio object with mixed audio
 
         Raises:
-            ValueError: If audio metadata doesn't match or fade duration is invalid
+            ValueError: If audio metadata doesn't match or position is invalid
         """
         # Validate matching metadata
         if self.metadata.channels != other.metadata.channels:
@@ -441,44 +441,40 @@ class Audio:
             raise ValueError("Sample rates must match")
         if self.metadata.sample_width != other.metadata.sample_width:
             raise ValueError("Sample widths must match")
+        if position < 0:
+            raise ValueError("Position cannot be negative")
 
-        # Validate fade duration more strictly
-        if fade_duration <= 0:
-            raise ValueError("Fade duration must be positive")
-        if fade_duration >= min(self.metadata.duration_seconds, other.metadata.duration_seconds):
-            raise ValueError("Fade duration cannot exceed the duration of either audio segment")
+        # Convert position to samples
+        position_samples = int(position * self.metadata.sample_rate)
 
-        # Rest of the implementation remains the same...
-        fade_length = int(fade_duration * self.metadata.sample_rate)
-        total_length = len(self.data) + len(other.data) - fade_length
+        # Calculate the total length needed for the output
+        total_length = max(len(self.data), position_samples + len(other.data))
 
+        # Create output array
         if self.metadata.channels == 1:
             output = np.zeros(total_length, dtype=np.float32)
         else:
-            output = np.zeros((total_length, 2), dtype=np.float32)
+            output = np.zeros((total_length, self.metadata.channels), dtype=np.float32)
 
-        fade_start_idx = len(self.data) - fade_length
-        output[:fade_start_idx] = self.data[:fade_start_idx]
-        output[fade_start_idx + fade_length :] = other.data[fade_length:]
+        # Copy base audio
+        output[: len(self.data)] = self.data
 
-        fade_out = np.linspace(1, 0, fade_length)
-        fade_in = np.linspace(0, 1, fade_length)
+        # Add overlay audio at the specified position
+        overlay_end = position_samples + len(other.data)
+        output[position_samples:overlay_end] += other.data
 
-        if self.metadata.channels == 1:
-            output[fade_start_idx : fade_start_idx + fade_length] = (
-                self.data[fade_start_idx:] * fade_out + other.data[:fade_length] * fade_in
-            )
-        else:
-            for channel in range(2):
-                output[fade_start_idx : fade_start_idx + fade_length, channel] = (
-                    self.data[fade_start_idx:, channel] * fade_out + other.data[:fade_length, channel] * fade_in
-                )
+        # Prevent clipping by scaling if necessary
+        max_amplitude = np.max(np.abs(output))
+        if max_amplitude > 1.0:
+            output = output / max_amplitude
 
+        # Create new metadata
+        new_duration = total_length / self.metadata.sample_rate
         new_metadata = AudioMetadata(
             sample_rate=self.metadata.sample_rate,
             channels=self.metadata.channels,
             sample_width=self.metadata.sample_width,
-            duration_seconds=(total_length / self.metadata.sample_rate),
+            duration_seconds=new_duration,
             frame_count=total_length,
         )
 
