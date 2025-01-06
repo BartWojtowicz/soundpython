@@ -327,7 +327,7 @@ class Audio:
             return Audio(concatenated_data, new_metadata)
 
         # Validate crossfade duration for crossfaded concat
-        if crossfade >= min(self.metadata.duration_seconds, other.metadata.duration_seconds):
+        if crossfade > min(self.metadata.duration_seconds, other.metadata.duration_seconds):
             raise ValueError("Crossfade duration cannot exceed duration of either audio segment")
 
         # Calculate crossfade parameters
