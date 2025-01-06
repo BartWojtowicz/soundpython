@@ -286,19 +286,20 @@ class Audio:
 
         return Audio(channel_data, new_metadata)
 
-    def concat(self, other: "Audio") -> "Audio":
+    def concat(self, other: "Audio", crossfade: float = 0.0) -> "Audio":
         """
         Concatenate another audio segment to this one.
         Audio metadata must match (sample rate, channels, etc.)
 
         Args:
             other: Another Audio object to concatenate
+            crossfade: Duration of crossfade in seconds (default: 0.0 for no crossfade)
 
         Returns:
             Audio: New Audio object with concatenated data
 
         Raises:
-            ValueError: If audio metadata doesn't match
+            ValueError: If audio metadata doesn't match or crossfade duration is invalid
         """
         # Validate matching metadata
         if self.metadata.channels != other.metadata.channels:
@@ -308,22 +309,68 @@ class Audio:
         if self.metadata.sample_width != other.metadata.sample_width:
             raise ValueError("Sample widths must match")
 
-        # Concatenate the data
+        # Handle case with no crossfade
+        if crossfade <= 0:
+            if self.metadata.channels == 1:
+                concatenated_data = np.concatenate([self.data, other.data])
+            else:
+                concatenated_data = np.vstack([self.data, other.data])
+
+            new_metadata = AudioMetadata(
+                sample_rate=self.metadata.sample_rate,
+                channels=self.metadata.channels,
+                sample_width=self.metadata.sample_width,
+                duration_seconds=self.metadata.duration_seconds + other.metadata.duration_seconds,
+                frame_count=len(concatenated_data),
+            )
+
+            return Audio(concatenated_data, new_metadata)
+
+        # Validate crossfade duration for crossfaded concat
+        if crossfade >= min(self.metadata.duration_seconds, other.metadata.duration_seconds):
+            raise ValueError("Crossfade duration cannot exceed duration of either audio segment")
+
+        # Calculate crossfade parameters
+        crossfade_samples = int(crossfade * self.metadata.sample_rate)
+
+        # Calculate output length and create output array
+        total_samples = len(self.data) + len(other.data) - crossfade_samples
         if self.metadata.channels == 1:
-            concatenated_data = np.concatenate([self.data, other.data])
+            output = np.zeros(total_samples, dtype=np.float32)
         else:
-            concatenated_data = np.vstack([self.data, other.data])
+            output = np.zeros((total_samples, self.metadata.channels), dtype=np.float32)
+
+        # Copy non-crossfaded portions
+        crossfade_start = len(self.data) - crossfade_samples
+        output[:crossfade_start] = self.data[:crossfade_start]
+        output[crossfade_start + crossfade_samples :] = other.data[crossfade_samples:]
+
+        # Create crossfade ramps
+        fade_out = np.linspace(1, 0, crossfade_samples)
+        fade_in = np.linspace(0, 1, crossfade_samples)
+
+        # Apply crossfade
+        if self.metadata.channels == 1:
+            output[crossfade_start : crossfade_start + crossfade_samples] = (
+                self.data[crossfade_start:] * fade_out + other.data[:crossfade_samples] * fade_in
+            )
+        else:
+            for channel in range(self.metadata.channels):
+                output[crossfade_start : crossfade_start + crossfade_samples, channel] = (
+                    self.data[crossfade_start:, channel] * fade_out + other.data[:crossfade_samples, channel] * fade_in
+                )
 
         # Create new metadata
+        new_duration = total_samples / self.metadata.sample_rate
         new_metadata = AudioMetadata(
             sample_rate=self.metadata.sample_rate,
             channels=self.metadata.channels,
             sample_width=self.metadata.sample_width,
-            duration_seconds=self.metadata.duration_seconds + other.metadata.duration_seconds,
-            frame_count=len(concatenated_data),
+            duration_seconds=new_duration,
+            frame_count=total_samples,
         )
 
-        return Audio(concatenated_data, new_metadata)
+        return Audio(output, new_metadata)
 
     def slice(self, start_seconds: float = 0.0, end_seconds: float | None = None) -> "Audio":
         """

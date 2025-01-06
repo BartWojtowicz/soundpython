@@ -539,3 +539,120 @@ def test_create_silent_invalid_params():
     # Test invalid sample width
     with pytest.raises(ValueError, match="Sample width must be 1, 2, or 4 bytes"):
         Audio.create_silent(1.0, sample_width=3)
+
+
+def test_concat_with_crossfade_mono():
+    """Test concatenating two mono audio files with crossfade"""
+    # Load same file twice for testing
+    audio1 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    audio2 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+
+    # Test with 0.5 second crossfade
+    crossfade_duration = 0.5
+    result = audio1.concat(audio2, crossfade=crossfade_duration)
+
+    # Check metadata
+    assert result.metadata.sample_rate == audio1.metadata.sample_rate
+    assert result.metadata.channels == 1
+    assert result.metadata.sample_width == audio1.metadata.sample_width
+
+    # Check data shape
+    crossfade_samples = int(crossfade_duration * audio1.metadata.sample_rate)
+    expected_length = len(audio1.data) + len(audio2.data) - crossfade_samples
+    assert len(result.data) == expected_length
+
+    # Check normalization
+    assert np.all(result.data >= -1.0)
+    assert np.all(result.data <= 1.0)
+
+    # Test crossfade region
+    crossfade_start_idx = len(audio1.data) - crossfade_samples
+    crossfade_region = result.data[crossfade_start_idx : crossfade_start_idx + crossfade_samples]
+
+    # Verify crossfade is actually happening
+    assert np.all(np.diff(crossfade_region) != 0), "Crossfade region should not be constant"
+
+    # Check duration
+    expected_duration = audio1.metadata.duration_seconds + audio2.metadata.duration_seconds - crossfade_duration
+    assert abs(result.metadata.duration_seconds - expected_duration) < 0.1
+
+
+def test_concat_with_crossfade_stereo():
+    """Test concatenating two stereo audio files with crossfade"""
+    # Load same file twice for testing
+    audio1 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    audio2 = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test with 0.5 second crossfade
+    crossfade_duration = 0.5
+    result = audio1.concat(audio2, crossfade=crossfade_duration)
+
+    # Check metadata
+    assert result.metadata.sample_rate == audio1.metadata.sample_rate
+    assert result.metadata.channels == 2
+    assert result.metadata.sample_width == audio1.metadata.sample_width
+
+    # Check data shape
+    crossfade_samples = int(crossfade_duration * audio1.metadata.sample_rate)
+    expected_length = len(audio1.data) + len(audio2.data) - crossfade_samples
+    assert len(result.data) == expected_length
+    assert result.data.shape[1] == 2
+
+    # Check normalization
+    assert np.all(result.data >= -1.0)
+    assert np.all(result.data <= 1.0)
+
+    # Test crossfade region
+    crossfade_start_idx = len(audio1.data) - crossfade_samples
+    crossfade_region = result.data[crossfade_start_idx : crossfade_start_idx + crossfade_samples]
+
+    # Verify crossfade is happening in both channels
+    assert np.all(np.diff(crossfade_region[:, 0]) != 0), "Left channel crossfade should not be constant"
+    assert np.all(np.diff(crossfade_region[:, 1]) != 0), "Right channel crossfade should not be constant"
+
+    # Check duration
+    expected_duration = audio1.metadata.duration_seconds + audio2.metadata.duration_seconds - crossfade_duration
+    assert abs(result.metadata.duration_seconds - expected_duration) < 0.1
+
+
+def test_concat_crossfade_invalid():
+    """Test concatenating with invalid crossfade parameters"""
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test mismatched channels
+    with pytest.raises(ValueError, match="Channel counts must match"):
+        mono.concat(stereo, crossfade=0.5)
+
+    # Test invalid crossfade duration
+    with pytest.raises(ValueError, match="Crossfade duration cannot exceed"):
+        mono.concat(mono, crossfade=500.0)  # Longer than audio duration
+
+    # Create audio with different sample rate
+    different_rate = Audio(
+        mono.data,
+        AudioMetadata(
+            sample_rate=22050,
+            channels=mono.metadata.channels,
+            sample_width=mono.metadata.sample_width,
+            duration_seconds=mono.metadata.duration_seconds,
+            frame_count=len(mono.data),
+        ),
+    )
+
+    # Test mismatched sample rates
+    with pytest.raises(ValueError, match="Sample rates must match"):
+        mono.concat(different_rate, crossfade=0.5)
+
+
+def test_concat_zero_crossfade():
+    """Test that concat with zero crossfade is same as regular concat"""
+    audio1 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    audio2 = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+
+    # Get results both ways
+    result_no_crossfade = audio1.concat(audio2)
+    result_zero_crossfade = audio1.concat(audio2, crossfade=0.0)
+
+    # Results should be identical
+    np.testing.assert_array_equal(result_no_crossfade.data, result_zero_crossfade.data)
