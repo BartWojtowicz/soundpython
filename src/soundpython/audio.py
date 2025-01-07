@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import subprocess
 import wave
@@ -86,12 +88,10 @@ class Audio:
         except subprocess.CalledProcessError as e:
             raise AudioLoadError(f"Error getting audio info: {e}")
 
-    # Add this method to the Audio class
-
     @classmethod
     def create_silent(
         cls, duration_seconds: float, stereo: bool = True, sample_rate: int = 44100, sample_width: int = 2
-    ) -> "Audio":
+    ) -> Audio:
         """
         Create a silent audio track.
 
@@ -134,7 +134,7 @@ class Audio:
         return cls(data, metadata)
 
     @classmethod
-    def from_file(cls, file_path: str | Path) -> "Audio":
+    def from_file(cls, file_path: str | Path) -> Audio:
         """
         Load audio from a file using ffmpeg
 
@@ -210,7 +210,7 @@ class Audio:
                         data = data.reshape(-1, 2)
 
                     # Normalize to float between -1 and 1
-                    max_value = float(np.iinfo(dtype).max)
+                    max_value = float(np.iinfo(dtype).max)  # type: ignore
                     data = data / max_value
 
                     # Ensure normalization is within bounds due to floating point precision
@@ -233,7 +233,7 @@ class Audio:
         except subprocess.CalledProcessError as e:
             raise AudioLoadError(f"Error running ffmpeg: {e}")
 
-    def to_mono(self) -> "Audio":
+    def to_mono(self) -> Audio:
         """
         Convert stereo audio to mono by averaging channels
 
@@ -255,7 +255,7 @@ class Audio:
 
         return Audio(mono_data, new_metadata)
 
-    def get_channel(self, channel: int) -> "Audio":
+    def get_channel(self, channel: int) -> Audio:
         """
         Extract a single channel from the audio
 
@@ -286,7 +286,7 @@ class Audio:
 
         return Audio(channel_data, new_metadata)
 
-    def concat(self, other: "Audio", crossfade: float = 0.0) -> "Audio":
+    def concat(self, other: Audio, crossfade: float = 0.0) -> Audio:
         """
         Concatenate another audio segment to this one.
         Audio metadata must match (sample rate, channels, etc.)
@@ -338,7 +338,7 @@ class Audio:
         if self.metadata.channels == 1:
             output = np.zeros(total_samples, dtype=np.float32)
         else:
-            output = np.zeros((total_samples, self.metadata.channels), dtype=np.float32)
+            output = np.zeros((total_samples, self.metadata.channels), dtype=np.float32)  # type: ignore
 
         # Copy non-crossfaded portions
         crossfade_start = len(self.data) - crossfade_samples
@@ -372,7 +372,7 @@ class Audio:
 
         return Audio(output, new_metadata)
 
-    def slice(self, start_seconds: float = 0.0, end_seconds: float | None = None) -> "Audio":
+    def slice(self, start_seconds: float = 0.0, end_seconds: float | None = None) -> Audio:
         """
         Extract a portion of the audio between start_seconds and end_seconds.
 
@@ -419,7 +419,7 @@ class Audio:
 
         return Audio(sliced_data, new_metadata)
 
-    def overlay(self, other: "Audio", position: float = 0.0) -> "Audio":
+    def overlay(self, other: Audio, position: float = 0.0) -> Audio:
         """
         Overlay another audio segment on top of this one, mixing both signals.
         Both tracks will play simultaneously, with the overlay track starting at the specified position.
@@ -454,7 +454,7 @@ class Audio:
         if self.metadata.channels == 1:
             output = np.zeros(total_length, dtype=np.float32)
         else:
-            output = np.zeros((total_length, self.metadata.channels), dtype=np.float32)
+            output = np.zeros((total_length, self.metadata.channels), dtype=np.float32)  # type: ignore
 
         # Copy base audio
         output[: len(self.data)] = self.data
@@ -480,7 +480,7 @@ class Audio:
 
         return Audio(output, new_metadata)
 
-    def save(self, file_path: str | Path, format: str = None) -> None:
+    def save(self, file_path: str | Path, format: str | None = None) -> None:
         """
         Save audio to a file using ffmpeg
 
