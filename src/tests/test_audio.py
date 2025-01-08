@@ -677,3 +677,42 @@ def test_overlay_identical_position():
     assert np.max(np.abs(result.data)) <= 1.0
     # Due to scaling, amplitudes should be less than direct sum
     assert np.all(np.abs(result.data) <= np.abs(base.data * 2))
+
+def test_is_silent():
+    """Test the is_silent property"""
+    # Test explicit silent audio
+    silent_audio = Audio.create_silent(duration_seconds=1.0)
+    assert silent_audio.is_silent, "Created silent audio should be detected as silent"
+
+    # Test non-silent audio
+    non_silent = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    assert not non_silent.is_silent, "Regular audio file should not be detected as silent"
+
+    # Test near-zero but not quite silent audio
+    almost_silent_data = np.full((44100,), 1e-8)  # Very small but non-zero values
+    almost_silent = Audio(
+        data=almost_silent_data,
+        metadata=AudioMetadata(
+            sample_rate=44100,
+            channels=1,
+            sample_width=2,
+            duration_seconds=1.0,
+            frame_count=44100,
+        ),
+    )
+    assert almost_silent.is_silent, "Nearly silent audio should be detected as silent"
+
+    # Test partially silent audio
+    partial_silent_data = np.zeros((44100,))
+    partial_silent_data[22050] = 0.5  # Single non-zero sample in the middle
+    partial_silent = Audio(
+        data=partial_silent_data,
+        metadata=AudioMetadata(
+            sample_rate=44100,
+            channels=1,
+            sample_width=2,
+            duration_seconds=1.0,
+            frame_count=44100,
+        ),
+    )
+    assert not partial_silent.is_silent, "Partially silent audio should not be detected as silent"

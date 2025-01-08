@@ -51,6 +51,17 @@ class Audio:
         self.data = data
         self.metadata = metadata
 
+    @property
+    def is_silent(self) -> np.bool:
+        """
+        Check if the audio track is silent (all samples are effectively zero)
+
+        Returns:
+            bool: True if the audio is silent, False otherwise
+        """
+        # Use a small threshold to account for floating-point precision
+        return np.all(np.abs(self.data) < 1e-7)
+
     @staticmethod
     def _get_ffmpeg_info(file_path: Path) -> dict:
         """Get audio metadata using ffprobe"""
