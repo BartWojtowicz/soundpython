@@ -266,6 +266,30 @@ class Audio:
 
         return Audio(mono_data, new_metadata)
 
+    def _to_stereo(self) -> Audio:
+        """
+        Convert mono audio to stereo by duplicating the channel.
+        If already stereo, return self.
+
+        Returns:
+            Audio: Stereo version of the audio
+        """
+        if self.metadata.channels == 2:
+            return self
+
+        # Reshape mono data to 2D array and duplicate channel
+        stereo_data = np.column_stack((self.data, self.data))
+
+        new_metadata = AudioMetadata(
+            sample_rate=self.metadata.sample_rate,
+            channels=2,
+            sample_width=self.metadata.sample_width,
+            duration_seconds=self.metadata.duration_seconds,
+            frame_count=len(stereo_data),
+        )
+
+        return Audio(stereo_data, new_metadata)
+
     def get_channel(self, channel: int) -> Audio:
         """
         Extract a single channel from the audio
@@ -300,7 +324,7 @@ class Audio:
     def concat(self, other: Audio, crossfade: float = 0.0) -> Audio:
         """
         Concatenate another audio segment to this one.
-        Audio metadata must match (sample rate, channels, etc.)
+        If mixing mono and stereo, converts mono to stereo.
 
         Args:
             other: Another Audio object to concatenate
@@ -312,71 +336,79 @@ class Audio:
         Raises:
             ValueError: If audio metadata doesn't match or crossfade duration is invalid
         """
-        # Validate matching metadata
-        if self.metadata.channels != other.metadata.channels:
-            raise ValueError("Channel counts must match")
-        if abs(self.metadata.sample_rate - other.metadata.sample_rate) > 0:  # Exact match required
+        if abs(self.metadata.sample_rate - other.metadata.sample_rate) > 0:
             raise ValueError("Sample rates must match")
         if self.metadata.sample_width != other.metadata.sample_width:
             raise ValueError("Sample widths must match")
 
+        # Determine output format (mono or stereo)
+        output_stereo = self.metadata.channels == 2 or other.metadata.channels == 2
+
+        # Convert to appropriate format if needed
+        first = self._to_stereo() if output_stereo and self.metadata.channels == 1 else self
+        second = other._to_stereo() if output_stereo and other.metadata.channels == 1 else other
+
+        if first.metadata.channels != second.metadata.channels:
+            raise ValueError("Channel counts must match")
+
         # Handle case with no crossfade
         if crossfade <= 0:
-            if self.metadata.channels == 1:
-                concatenated_data = np.concatenate([self.data, other.data])
+            if first.metadata.channels == 1:
+                concatenated_data = np.concatenate([first.data, second.data])
             else:
-                concatenated_data = np.vstack([self.data, other.data])
+                concatenated_data = np.vstack([first.data, second.data])
 
             new_metadata = AudioMetadata(
-                sample_rate=self.metadata.sample_rate,
-                channels=self.metadata.channels,
-                sample_width=self.metadata.sample_width,
-                duration_seconds=self.metadata.duration_seconds + other.metadata.duration_seconds,
+                sample_rate=first.metadata.sample_rate,
+                channels=first.metadata.channels,
+                sample_width=first.metadata.sample_width,
+                duration_seconds=first.metadata.duration_seconds + second.metadata.duration_seconds,
                 frame_count=len(concatenated_data),
             )
 
             return Audio(concatenated_data, new_metadata)
 
-        # Validate crossfade duration for crossfaded concat
-        if crossfade > min(self.metadata.duration_seconds, other.metadata.duration_seconds):
+        # Validate crossfade duration
+        if crossfade > min(first.metadata.duration_seconds, second.metadata.duration_seconds):
             raise ValueError("Crossfade duration cannot exceed duration of either audio segment")
 
         # Calculate crossfade parameters
-        crossfade_samples = int(crossfade * self.metadata.sample_rate)
+        crossfade_samples = int(crossfade * first.metadata.sample_rate)
 
         # Calculate output length and create output array
-        total_samples = len(self.data) + len(other.data) - crossfade_samples
-        if self.metadata.channels == 1:
+        total_samples = len(first.data) + len(second.data) - crossfade_samples
+        if first.metadata.channels == 1:
             output = np.zeros(total_samples, dtype=np.float32)
         else:
-            output = np.zeros((total_samples, self.metadata.channels), dtype=np.float32)  # type: ignore
+            output = np.zeros((total_samples, 2), dtype=np.float32)  # type: ignore
 
         # Copy non-crossfaded portions
-        crossfade_start = len(self.data) - crossfade_samples
-        output[:crossfade_start] = self.data[:crossfade_start]
-        output[crossfade_start + crossfade_samples :] = other.data[crossfade_samples:]
+        crossfade_start = len(first.data) - crossfade_samples
+        output[:crossfade_start] = first.data[:crossfade_start]
+        output[crossfade_start + crossfade_samples :] = second.data[crossfade_samples:]
 
         # Create crossfade ramps
         fade_out = np.linspace(1, 0, crossfade_samples)
         fade_in = np.linspace(0, 1, crossfade_samples)
 
         # Apply crossfade
-        if self.metadata.channels == 1:
+        if first.metadata.channels == 1:
             output[crossfade_start : crossfade_start + crossfade_samples] = (
-                self.data[crossfade_start:] * fade_out + other.data[:crossfade_samples] * fade_in
+                first.data[crossfade_start:] * fade_out + second.data[:crossfade_samples] * fade_in
             )
         else:
-            for channel in range(self.metadata.channels):
+            for channel in range(first.metadata.channels):
                 output[crossfade_start : crossfade_start + crossfade_samples, channel] = (
-                    self.data[crossfade_start:, channel] * fade_out + other.data[:crossfade_samples, channel] * fade_in
+                    first.data[crossfade_start:, channel] * fade_out
+                    + second.data[:crossfade_samples, channel] * fade_in
                 )
 
         # Create new metadata
-        new_duration = total_samples / self.metadata.sample_rate
+        new_duration = total_samples / first.metadata.sample_rate
         new_metadata = AudioMetadata(
-            sample_rate=self.metadata.sample_rate,
-            channels=self.metadata.channels,
-            sample_width=self.metadata.sample_width,
+            sample_rate=first.metadata.sample_rate,
+            channels=first.metadata.channels,
+            sample_width=first.metadata.sample_width,
             duration_seconds=new_duration,
             frame_count=total_samples,
         )
@@ -433,7 +465,7 @@ class Audio:
     def overlay(self, other: Audio, position: float = 0.0) -> Audio:
         """
         Overlay another audio segment on top of this one, mixing both signals.
-        Both tracks will play simultaneously, with the overlay track starting at the specified position.
+        If mixing mono and stereo, converts mono to stereo.
 
         Args:
             other: Another Audio object to overlay
@@ -445,46 +477,53 @@ class Audio:
         Raises:
             ValueError: If audio metadata doesn't match or position is invalid
         """
-        # Validate matching metadata
-        if self.metadata.channels != other.metadata.channels:
-            raise ValueError("Channel counts must match")
-        if abs(self.metadata.sample_rate - other.metadata.sample_rate) > 0:  # Exact match required
+        if abs(self.metadata.sample_rate - other.metadata.sample_rate) > 0:
             raise ValueError("Sample rates must match")
         if self.metadata.sample_width != other.metadata.sample_width:
             raise ValueError("Sample widths must match")
         if position < 0:
             raise ValueError("Position cannot be negative")
 
-        # Convert position to samples
-        position_samples = int(position * self.metadata.sample_rate)
+        # Determine output format (mono or stereo)
+        output_stereo = self.metadata.channels == 2 or other.metadata.channels == 2
+
+        # Convert to appropriate format if needed
+        base = self._to_stereo() if output_stereo and self.metadata.channels == 1 else self
+        overlay_audio = other._to_stereo() if output_stereo and other.metadata.channels == 1 else other
+
+        if base.metadata.channels != overlay_audio.metadata.channels:
+            raise ValueError("Channel counts must match")
+
+        # Convert position to samples, using ceil to ensure we don't cut off any audio
+        position_samples = int(np.ceil(position * base.metadata.sample_rate))
 
         # Calculate the total length needed for the output
-        total_length = max(len(self.data), position_samples + len(other.data))
+        total_length = max(len(base.data), position_samples + len(overlay_audio.data))
 
-        # Create output array
-        if self.metadata.channels == 1:
+        # Create output array with appropriate shape
+        if base.metadata.channels == 1:
             output = np.zeros(total_length, dtype=np.float32)
         else:
-            output = np.zeros((total_length, self.metadata.channels), dtype=np.float32)  # type: ignore
+            output = np.zeros((total_length, 2), dtype=np.float32)  # type: ignore
 
         # Copy base audio
-        output[: len(self.data)] = self.data
+        output[: len(base.data)] = base.data
 
         # Add overlay audio at the specified position
-        overlay_end = position_samples + len(other.data)
-        output[position_samples:overlay_end] += other.data
+        overlay_end = position_samples + len(overlay_audio.data)
+        output[position_samples:overlay_end] += overlay_audio.data
 
         # Prevent clipping by scaling if necessary
         max_amplitude = np.max(np.abs(output))
         if max_amplitude > 1.0:
             output = output / max_amplitude
 
-        # Create new metadata
-        new_duration = total_length / self.metadata.sample_rate
+        # Create new metadata, using actual duration calculation
+        new_duration = max(base.metadata.duration_seconds, position + overlay_audio.metadata.duration_seconds)
         new_metadata = AudioMetadata(
-            sample_rate=self.metadata.sample_rate,
-            channels=self.metadata.channels,
-            sample_width=self.metadata.sample_width,
+            sample_rate=base.metadata.sample_rate,
+            channels=base.metadata.channels,
+            sample_width=base.metadata.sample_width,
             duration_seconds=new_duration,
             frame_count=total_length,
         )

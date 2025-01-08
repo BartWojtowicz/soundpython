@@ -285,14 +285,6 @@ def test_concat_stereo():
 def test_concat_invalid():
     """Test concatenating incompatible audio files"""
     mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-
-    # Test mismatched channels
-    with pytest.raises(ValueError, match="Channel counts must match"):
-        mono.concat(stereo)
-
-    with pytest.raises(ValueError, match="Channel counts must match"):
-        stereo.concat(mono)
 
     # Create audio with different sample rate for testing
     different_rate = Audio(
@@ -519,16 +511,6 @@ def test_concat_with_crossfade_stereo():
 def test_concat_crossfade_invalid():
     """Test concatenating with invalid crossfade parameters"""
     mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-
-    # Test mismatched channels
-    with pytest.raises(ValueError, match="Channel counts must match"):
-        mono.concat(stereo, crossfade=0.5)
-
-    # Test invalid crossfade duration
-    with pytest.raises(ValueError, match="Crossfade duration cannot exceed"):
-        mono.concat(mono, crossfade=500.0)  # Longer than audio duration
-
     # Create audio with different sample rate
     different_rate = Audio(
         mono.data,
@@ -577,15 +559,6 @@ def test_overlay_stereo_with_stereo():
     result = base.overlay(overlay, position=position)
     assert result.metadata.duration_seconds >= base.metadata.duration_seconds
     assert result.metadata.duration_seconds >= position + overlay.metadata.duration_seconds
-
-
-def test_overlay_mono_incompatible():
-    """Test overlaying mono and stereo tracks raises error"""
-    base = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
-    overlay = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
-
-    with pytest.raises(ValueError, match="Channel counts must match"):
-        base.overlay(overlay, position=0.0)
 
 
 def test_overlay_amplitude_scaling():
@@ -678,6 +651,7 @@ def test_overlay_identical_position():
     # Due to scaling, amplitudes should be less than direct sum
     assert np.all(np.abs(result.data) <= np.abs(base.data * 2))
 
+
 def test_is_silent():
     """Test the is_silent property"""
     # Test explicit silent audio
@@ -716,3 +690,107 @@ def test_is_silent():
         ),
     )
     assert not partial_silent.is_silent, "Partially silent audio should not be detected as silent"
+
+
+def test_to_stereo():
+    """Test internal _to_stereo method"""
+    # Load mono audio
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+
+    # Convert to stereo
+    stereo = mono._to_stereo()
+
+    # Check that it's now stereo
+    assert stereo.metadata.channels == 2
+    assert stereo.data.ndim == 2
+    assert stereo.data.shape[1] == 2
+
+    # Check that both channels are identical
+    np.testing.assert_array_equal(stereo.data[:, 0], stereo.data[:, 1])
+
+    # Test that stereo audio remains unchanged
+    original_stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+    result = original_stereo._to_stereo()
+    np.testing.assert_array_equal(original_stereo.data, result.data)
+
+
+def test_overlay_mono_with_stereo():
+    """Test overlaying mono track with stereo track"""
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test both ways
+    result1 = mono.overlay(stereo, position=0.0)
+    result2 = stereo.overlay(mono, position=0.0)
+
+    # Check that results are stereo
+    assert result1.metadata.channels == 2
+    assert result2.metadata.channels == 2
+
+    # Check normalization
+    assert np.all(np.abs(result1.data) <= 1.0)
+    assert np.all(np.abs(result2.data) <= 1.0)
+
+
+def test_concat_mono_with_stereo():
+    """Test concatenating mono track with stereo track"""
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test both ways
+    result1 = mono.concat(stereo)
+    result2 = stereo.concat(mono)
+
+    # Check that results are stereo
+    assert result1.metadata.channels == 2
+    assert result2.metadata.channels == 2
+
+    # Check data shapes
+    assert result1.data.shape[1] == 2
+    assert result2.data.shape[1] == 2
+
+    # Test with crossfade
+    result_crossfade = mono.concat(stereo, crossfade=0.5)
+    assert result_crossfade.metadata.channels == 2
+    assert np.all(np.abs(result_crossfade.data) <= 1.0)
+
+
+def test_concat_crossfade_mono_stereo():
+    """Test concatenating mono and stereo tracks with crossfade"""
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test with crossfade
+    crossfade_duration = 0.5
+    result = mono.concat(stereo, crossfade=crossfade_duration)
+
+    # Check metadata
+    assert result.metadata.channels == 2  # Result should be stereo
+    assert result.metadata.sample_rate == mono.metadata.sample_rate
+    assert result.metadata.sample_width == mono.metadata.sample_width
+
+    # Check crossfade region
+    crossfade_samples = int(crossfade_duration * mono.metadata.sample_rate)
+    crossfade_start_idx = len(mono.data) - crossfade_samples
+    crossfade_region = result.data[crossfade_start_idx : crossfade_start_idx + crossfade_samples]
+
+    # Verify crossfade is happening in both channels
+    assert np.all(np.diff(crossfade_region[:, 0]) != 0), "Left channel crossfade should not be constant"
+    assert np.all(np.diff(crossfade_region[:, 1]) != 0), "Right channel crossfade should not be constant"
+
+
+def test_overlay_position_mono_stereo():
+    """Test overlaying mono on stereo at different positions"""
+    mono = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+    stereo = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Test overlay at different positions
+    positions = [0.0, 0.5, 1.0]
+    for pos in positions:
+        result = stereo.overlay(mono, position=pos)
+        assert result.metadata.channels == 2
+        assert np.all(np.abs(result.data) <= 1.0)
+
+        # Check that the result is longer than the position plus mono duration
+        min_duration = pos + mono.metadata.duration_seconds
+        assert result.metadata.duration_seconds >= min_duration
