@@ -5,47 +5,38 @@ jobs:
   unit_tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install ffmpeg -y
-
       - name: Set up Python
         run: uv python install 312
-
       - name: Install the project
         run: uv sync --dev
-
       - name: Run tests
         run: uv run pytest
   
   static_checks:
     name: Static checks
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-
       - name: Set up Python
         run: uv python install 312
-
+      - name: Install dev dependencies
+        run: uv sync --dev
       - name: Ruff lint check
-        run: uvx ruff check
-
+        run: uv run ruff check
       - name: Ruff format check
-        run: uvx ruff format --check
+        run: uv run ruff format --check
 
   mypy:
     name: Type tests
@@ -53,15 +44,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-
       - name: Set up Python
         run: uv python install 312
-
       - name: Install all dependencies
         run: uv sync --all-extras
-
       - name: Run type tests
         run: uv run mypy src
