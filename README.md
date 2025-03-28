@@ -16,7 +16,7 @@ soundpython is a Python library for audio file processing that provides a simple
 ## Requirements
 
 - Python 3.10 or higher
-- NumPy 2.2.1 or higher
+- NumPy 2.1.0 or higher
 - FFmpeg (must be installed and available in system PATH)
 
 ## Installation
