@@ -346,7 +346,7 @@ class Audio:
         resampled_data = np.zeros((target_length, self.metadata.channels), dtype=np.float32)
 
         for channel in range(self.metadata.channels):
-            resampled_data[:, channel] = signal.resample(audio_array[:, channel], target_length)
+            resampled_data[:, channel] = self._resample_channel(audio_array[:, channel], target_length)
 
         new_metadata = AudioMetadata(
             sample_rate=target_sample_rate,
@@ -366,8 +366,7 @@ class Audio:
         data_fourier = np.fft.rfft(data, axis=axis)
         original_length = data.shape[axis]
 
-        newshape = data.shape
-        newshape[axis] = new_length // 2 + 1
+        newshape = [new_length // 2 + 1 if i == axis else data_fourier.shape[i] for i in range(data_fourier.ndim)]
 
         data_fourier_placeholder = np.zeros(newshape, data_fourier.dtype)
 
