@@ -9,6 +9,7 @@ from soundpython import Audio, AudioMetadata
 # Test constants
 MONO_SAMPLE_RATE = 44100
 STEREO_SAMPLE_RATE = 44100
+NEW_SAMPLE_RATE = 16000
 
 TEST_ROOT_DIR: Path = Path(__file__).parent
 TEST_DATA_DIR: Path = TEST_ROOT_DIR / "test_data"
@@ -794,3 +795,35 @@ def test_overlay_position_mono_stereo():
         # Check that the result is longer than the position plus mono duration
         min_duration = pos + mono.metadata.duration_seconds
         assert result.metadata.duration_seconds >= min_duration
+
+
+def test_resample_mono():
+    """Test resampling mono audio"""
+    audio = Audio.from_file(TEST_DATA_DIR / "test_mono.mp3")
+
+    # Resample to 16kHz
+    resampled = audio.resample(NEW_SAMPLE_RATE)
+
+    # Check metadata
+    assert resampled.metadata.sample_rate == NEW_SAMPLE_RATE
+    assert resampled.metadata.channels == 1
+    assert resampled.metadata.sample_width == audio.metadata.sample_width
+    assert abs(resampled.metadata.duration_seconds - audio.metadata.duration_seconds) < 0.1
+
+    # Check reconstruction
+    reconstructed = resampled.resample(audio.metadata.sample_rate)
+    assert reconstructed.data.shape[0] - audio.data.shape[0] <= 1
+
+
+def test_resample_stereo():
+    """Test resampling stereo audio"""
+    audio = Audio.from_file(TEST_DATA_DIR / "test_stereo.mp3")
+
+    # Resample to 16kHz
+    resampled = audio.resample(NEW_SAMPLE_RATE)
+
+    # Check metadata
+    assert resampled.metadata.sample_rate == NEW_SAMPLE_RATE
+    assert resampled.metadata.channels == 2
+    assert resampled.metadata.sample_width == audio.metadata.sample_width
+    assert abs(resampled.metadata.duration_seconds - audio.metadata.duration_seconds) < 0.1

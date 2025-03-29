@@ -321,6 +321,76 @@ class Audio:
 
         return Audio(channel_data, new_metadata)
 
+    def resample(self, target_sample_rate: int) -> Audio:
+        """
+        Resample the audio to a new sample rate
+
+        Args:
+            target_sample_rate: New sample rate in Hz
+
+        Returns:
+            Audio: New Audio instance with resampled audio
+        """
+        if target_sample_rate == self.metadata.sample_rate:
+            return self
+
+        # Calculate resampling ratio
+        ratio = target_sample_rate / self.metadata.sample_rate
+
+        target_length = round(self.data.shape[0] * ratio)
+
+        audio_array = self.data
+        if self.metadata.channels == 1:
+            audio_array = audio_array.reshape(-1, 1)
+
+        resampled_data = np.zeros((target_length, self.metadata.channels), dtype=np.float32)
+
+        for channel in range(self.metadata.channels):
+            resampled_data[:, channel] = signal.resample(audio_array[:, channel], target_length)
+
+        new_metadata = AudioMetadata(
+            sample_rate=target_sample_rate,
+            channels=self.metadata.channels,
+            sample_width=self.metadata.sample_width,
+            duration_seconds=target_length / target_sample_rate,
+            frame_count=target_length,
+        )
+        if self.metadata.channels == 1:
+            resampled_data = resampled_data.flatten()
+
+        return Audio(resampled_data, new_metadata)
+
+    def _resample_channel(self, data: np.ndarray, new_length: int, axis: int = 0) -> np.ndarray:
+        """Resample a single channel of audio data to a new length"""
+
+        data_fourier = np.fft.rfft(data, axis=axis)
+        original_length = data.shape[axis]
+
+        newshape = data.shape
+        newshape[axis] = new_length // 2 + 1
+
+        data_fourier_placeholder = np.zeros(newshape, data_fourier.dtype)
+
+        min_length = min(new_length, original_length)
+        nyquist = min_length // 2 + 1
+        sl = [slice(None)] * data.ndim
+        sl[axis] = slice(0, nyquist)
+        data_fourier_placeholder[tuple(sl)] = data_fourier[tuple(sl)]
+
+        if min_length % 2 == 0:
+            if new_length < original_length:
+                sl[axis] = slice(min_length // 2, min_length // 2 + 1)
+                data_fourier_placeholder[tuple(sl)] *= 2.0
+
+                sl[axis] = slice(min_length // 2, min_length // 2 + 1)
+                data_fourier_placeholder[tuple(sl)] *= 0.5
+
+        resampled_data = np.fft.irfft(data_fourier_placeholder, new_length, axis=axis)
+
+        resampled_data *= float(new_length) / float(original_length)
+
+        return resampled_data
+
     def concat(self, other: Audio, crossfade: float = 0.0) -> Audio:
         """
         Concatenate another audio segment to this one.
